@@ -1,7 +1,5 @@
 using Pkg
-Pkg.activate("projects/BulkDSOC")
-Pkg.develop(path=pwd())
-Pkg.instantiate()
+Pkg.activate(".")
 
 using Revise
 using EasyHybrid
