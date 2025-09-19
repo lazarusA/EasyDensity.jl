@@ -3,3 +3,6 @@ Manifest.toml
 *.png
 *.pdf
 *.svg
+/output_tmp
+/eval
+/data

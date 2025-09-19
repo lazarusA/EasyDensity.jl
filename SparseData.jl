@@ -1,6 +1,5 @@
 using Pkg
-Pkg.activate(".")
-
+# Pkg.activate(".")
 using Revise
 using EasyHybrid
 using Lux

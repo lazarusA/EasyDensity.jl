@@ -1,6 +1,6 @@
 using Pkg
-Pkg.activate(".")
-
+# Pkg.activate(".")
+# Pkg.instantiate()
 using Revise
 using EasyHybrid
 using Lux
@@ -19,14 +19,32 @@ testid = "04a_hybridBD";
 results_dir = joinpath(@__DIR__, "eval");
 
 # input
-raw = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed.csv"), DataFrame; normalizenames=true);
-raw = dropmissing(raw); # to be discussed, as now train.jl seems to allow training with sparse data
-raw .= Float32.(raw);
-df = raw;
+train_df = CSV.read(joinpath(@__DIR__, "data/lucas_train.csv"), DataFrame; normalizenames=true)
+train_df = dropmissing(train_df)
+test_df = CSV.read(joinpath(@__DIR__, "data/lucas_test.csv"), DataFrame; normalizenames=true)
+test_df = dropmissing(test_df)
+
+# scales
+scalers = Dict(
+    :SOCconc   => 0.158, # log(x*1000)*0.158
+    :CF        => 2.2,
+    :BD        => 0.53,
+    :SOCdensity => 0.165, # log(x*1000)*0.165
+);
+for tgt in targets
+    if tgt in (:SOCdensity, :SOCconc)
+        train_df[!, tgt] .= log.(train_df[!, tgt] .* 1000)
+        test_df[!, tgt]  .= log.(test_df[!, tgt] .* 1000)
+    end
+    train_df[!, tgt] .= train_df[!, tgt] .* scalers[tgt]
+    test_df[!, tgt]  .= test_df[!, tgt] .* scalers[tgt]
+end
 
 # mechanistic model
 function BD_model(; SOCconc, oBD, mBD)
+    SOCconc = exp.(SOCconc ./ 0.158) ./ 1000  # back to fraction
     BD = (oBD .* mBD) ./ (1.724f0 .* SOCconc .* mBD .+ (1f0 .- 1.724f0 .* SOCconc) .* oBD)
+    BD = BD .* 0.53  # scale to ~[0,1]
     return (; BD, SOCconc, oBD, mBD)  # supervise both BD and SOCconc
 end
 
@@ -76,7 +94,7 @@ for bs in batch_sizes, lr in lrs, act in acts
     )
 
     res = train(
-        hm, df, ();  
+        hm, (train_df,test_df), ();  
         nepochs = 200,
         batchsize = bs,
         opt = AdamW(lr),
