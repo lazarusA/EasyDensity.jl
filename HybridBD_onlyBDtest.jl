@@ -31,7 +31,7 @@ scalers = Dict(
     :BD        => 0.53,
     :SOCdensity => 0.165, # log(x*1000)*0.165
 );
-for tgt in targets
+for tgt in [:BD, :CF, :SOCconc, :SOCdensity]
     if tgt in (:SOCdensity, :SOCconc)
         train_df[!, tgt] .= log.(train_df[!, tgt] .* 1000)
         test_df[!, tgt]  .= log.(test_df[!, tgt] .* 1000)
@@ -42,8 +42,8 @@ end
 
 # mechanistic model
 function BD_model(; SOCconc, oBD, mBD)
-    SOCconc = exp.(SOCconc ./ 0.158) ./ 1000  # back to fraction
-    BD = (oBD .* mBD) ./ (1.724f0 .* SOCconc .* mBD .+ (1f0 .- 1.724f0 .* SOCconc) .* oBD)
+    soct = exp.(SOCconc ./ 0.158) ./ 1000  # back to fraction
+    BD = (oBD .* mBD) ./ (1.724f0 .* soct .* mBD .+ (1f0 .- 1.724f0 .* soct) .* oBD)
     BD = BD .* 0.53  # scale to ~[0,1]
     return (; BD, SOCconc, oBD, mBD)  # supervise both BD and SOCconc
 end
@@ -56,14 +56,14 @@ parameters = (
 )
 
 # define param for hybrid model
-neural_param_names = [:SOCconc, :oBD]
-global_param_names = [:mBD]
+neural_param_names = [:SOCconc, :mBD]
+global_param_names = [:oBD]
 forcing = Symbol[]     
 targets = [:BD, :SOCconc]       # SOCconc is both a param and a target
 
 # just exclude targets explicitly to be safe
-predictors = setdiff(Symbol.(names(df)), targets); # first 3 and last 1
-nf = length(predictors);
+predictors = Symbol.(names(train_df))[5:end-1]; # first 3 and last 1
+nf = length(predictors)
 
 # search space
 batch_sizes = [32, 64, 128, 256, 512];
@@ -93,8 +93,12 @@ for bs in batch_sizes, lr in lrs, act in acts
         start_from_default = true
     )
 
+    # prepare data....
+    (x_train, y_train) = EasyHybrid.prepare_data(hm, train_df)
+    (x_val,   y_val)   = EasyHybrid.prepare_data(hm, test_df)
+
     res = train(
-        hm, (train_df,test_df), ();  
+        hm, ((x_train, y_train), (x_val, y_val)), ();  
         nepochs = 200,
         batchsize = bs,
         opt = AdamW(lr),
@@ -126,12 +130,12 @@ for bs in batch_sizes, lr in lrs, act in acts
         best_r2 = best_r2_here
 
         # map global mBD -> physical
-        mBD_phys = EasyHybrid.scale_single_param(:mBD, res.ps[:mBD], hm.parameters) |> vec |> first
-        mBD_raw  = res.ps[:mBD][1]  # unconstrained optimizer value
+        oBD_phys = EasyHybrid.scale_single_param(:oBD, res.ps[:oBD], hm.parameters) |> vec |> first
+        oBD_raw  = res.ps[:oBD][1]  # unconstrained optimizer value
 
         # per-sample oBD
-        oBD_phys = (hasproperty(res, :val_diffs) && hasproperty(res.val_diffs, :oBD)) ?
-                collect(res.val_diffs.oBD) : nothing
+        mBD_phys = (hasproperty(res, :val_diffs) && hasproperty(res.val_diffs, :mBD)) ?
+                collect(res.val_diffs.mBD) : nothing
 
         best_bundle = (
             ps = deepcopy(res.ps),
@@ -142,9 +146,9 @@ for bs in batch_sizes, lr in lrs, act in acts
             meta = (bs=bs, lr=lr, act=act, best_epoch=best_idx,
                     r2=best_r2_here, mse=best_mse_here),
             # convenience fields
-            mBD_physical = mBD_phys,
-            mBD_unconstr = mBD_raw,
-            oBD_phys = oBD_phys
+            oBD_physical = oBD_phys,
+            oBD_unconstr = oBD_raw,
+            mBD_phys = mBD_phys
         )
     end
 end
