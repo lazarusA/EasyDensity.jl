@@ -5,7 +5,7 @@ using Revise
 using EasyHybrid
 using Lux
 using Optimisers
-using GLMakie
+# using GLMakie
 using Random
 using LuxCore
 using CSV, DataFrames
@@ -13,9 +13,10 @@ using EasyHybrid.MLUtils
 using Statistics
 using Plots
 using JLD2
+using CairoMakie
 
 # 04 - hybrid
-testid = "04a_hybridonlyBD";
+testid = "04a_hybridBD";
 results_dir = joinpath(@__DIR__, "eval");
 
 # input
@@ -41,25 +42,30 @@ for tgt in [:BD, :CF, :SOCconc, :SOCdensity]
 end
 
 # mechanistic model
-function BD_model(; SOCconc, oBD, mBD)
+function SOCD_model(; SOCconc, CF, oBD, mBD)
     soct = exp.(SOCconc ./ 0.158) ./ 1000  # back to fraction
+    cft = CF ./ 2.2                     # back to fraction
     BD = (oBD .* mBD) ./ (1.724f0 .* soct .* mBD .+ (1f0 .- 1.724f0 .* soct) .* oBD)
+    SOCdensity = soct .* BD .* (1 .- cft)
+    
+    SOCdensity = log.(SOCdensity .* 1000) .* 0.165  # scale to ~[0,1]
     BD = BD .* 0.53  # scale to ~[0,1]
-    return (; BD, SOCconc, oBD, mBD)  # supervise both BD and SOCconc
+    return (; BD, SOCconc, CF, SOCdensity, oBD, mBD)  # supervise both BD and SOCconc
 end
 
 # param bounds
 parameters = (
     SOCconc = (0.01f0, 0.0f0, 1.0f0),   # fraction
+    CF      = (0.15f0, 0.0f0, 1.0f0),   # fraction,
     oBD     = (0.20f0, 0.05f0, 0.40f0),  # g/cm^3
     mBD     = (1.20f0, 0.75f0, 2.0f0),  # global
 )
 
 # define param for hybrid model
-neural_param_names = [:SOCconc, :mBD]
+neural_param_names = [:SOCconc, :CF, :mBD]
 global_param_names = [:oBD]
-forcing = Symbol[]     
-targets = [:BD, :SOCconc]       # SOCconc is both a param and a target
+forcing = Symbol[]
+targets = [:BD, :SOCconc, :SOCdensity, :CF]       # SOCconc is both a param and a target
 
 # just exclude targets explicitly to be safe
 predictors = Symbol.(names(train_df))[5:end-1]; # first 3 and last 1
@@ -82,7 +88,7 @@ for bs in batch_sizes, lr in lrs, act in acts
         predictors,              # single NN uses a Vector of predictors
         forcing,
         targets,
-        BD_model,
+        SOCD_model,
         parameters,
         neural_param_names,
         global_param_names;     
@@ -165,16 +171,19 @@ df_results = DataFrame(
 out_file = joinpath(results_dir, "$(testid)_parameter_search.csv")
 CSV.write(out_file, df_results)
 
-
 # print best model
 @assert best_bundle !== nothing "No valid model found for $testid"
 bm = best_bundle
-@save joinpath(results_dir, "$(testid)_best_model.jld2") \
-    ps=best_bundle.ps st=best_bundle.st model=best_bundle.model \
-    val_obs_pred=best_bundle.val_obs_pred val_diffs=best_bundle.val_diffs \
-    meta=best_bundle.meta \
-    mBD_physical=best_bundle.mBD_physical mBD_unconstr=best_bundle.mBD_unconstr \
-    oBD_phys=best_bundle.oBD_phys
+file_path = joinpath(results_dir, "$(testid)_best_model.jld2")
+jldsave(file_path;
+    ps=best_bundle.ps, st=best_bundle.st, model=best_bundle.model,
+    val_obs_pred=best_bundle.val_obs_pred, val_diffs=best_bundle.val_diffs,
+    meta=best_bundle.meta,
+    mBD_phys=best_bundle.mBD_phys,
+    oBD_physical=best_bundle.oBD_physical,      # use the actual field
+    oBD_unconstr=best_bundle.oBD_unconstr
+)
+
 # @load joinpath(results_dir, "best_model_$(tgt).jld2") ps st model val_obs_pred meta
 @info "Best for $testid: bs=$(bm.meta.bs), lr=$(bm.meta.lr), act=$(bm.meta.act), epoch=$(bm.meta.best_epoch), R2=$(round(best_r2, digits=4))"
 
@@ -183,14 +192,18 @@ jld = joinpath(results_dir, "$(testid)_best_model.jld2")
 @assert isfile(jld) "Missing $(jld). Did you train & save best model for $(tname)?"
 @load jld val_obs_pred meta
 # split output table
-val_tables = Dict{Symbol,DataFrame}()
+val_tables = Dict{Symbol,Vector{Float64}}()
 for t in targets
     # expected: t (true), t_pred (pred), and maybe :index if the framework saved it
     have_pred = Symbol(t, :_pred)
     req = Set((t, have_pred))
     @assert issubset(req, Symbol.(names(val_obs_pred))) "val_obs_pred missing $(collect(req)) for $(t). Columns: $(names(val_obs_pred))"
-    keep = [:index, t, have_pred] 
-    val_tables[t] = val_obs_pred[:, keep]
+    val_tables[t] = val_obs_pred[:, t]./ scalers[t]
+    val_tables[have_pred] = val_obs_pred[:, have_pred]./ scalers[t]
+    if t in (:SOCdensity, :SOCconc)
+        val_tables[Symbol("$(t)_pred")] = exp.(val_tables[Symbol("$(t)_pred")]) ./ 1000
+        val_tables[t] = exp.(val_tables[t]) ./ 1000
+    end
 end
 
 
@@ -205,17 +218,16 @@ end
 
 # accuracy plots for SOCconc, BD, CF in original space
 for tname in targets
-    df_out = val_tables[tname]
-    @assert all(in(Symbol.(names(df_out))).([tname, Symbol("$(tname)_pred")])) "Expected columns $(tname) and $(tname)_pred in saved val table."
+    y_val_true = val_tables[tname]
+    y_val_pred = val_tables[Symbol("$(tname)_pred")]
 
-    y_val_true = back_transform(df_out[:, tname], tname, MINMAX)
-    y_val_pred = back_transform(df_out[:, Symbol("$(tname)_pred")], tname, MINMAX)
+    # @assert all(in(Symbol.(names(df_out))).([tname, Symbol("$(tname)_pred")])) "Expected columns $(tname) and $(tname)_pred in saved val table."
 
     r2, mse = r2_mse(y_val_true, y_val_pred)
 
     plt = histogram2d(
-        y_val_true, y_val_pred;
-        nbins=(40, 40), cbar=true, xlab="True", ylab="Predicted",
+        y_val_pred, y_val_true;
+        nbins=(40, 40), cbar=true, xlab="Predicted", ylab="Observed",
         title = string(tname, "\nR²=", round(r2, digits=3), ", MSE=", round(mse, digits=3)),
         normalize=false
     )
@@ -229,7 +241,7 @@ end
 
 # BD vs SOCconc predictions
 plt = histogram2d(
-    df_soc[:,:BD_pred], df_soc[:,:SOCconc_pred];
+    val_tables[:BD_pred], val_tables[:SOCconc_pred];
     nbins      = (30, 30),
     cbar       = true,
     xlab       = "BD",
@@ -240,16 +252,32 @@ plt = histogram2d(
 )   
 savefig(plt, joinpath(results_dir, "$(testid)_BD.vs.SOCconc.png"));
 
-
 # save / print parameters: mBD and per-sample oBD
-# mBD global
-mBD_learned = EasyHybrid.scale_single_param(:mBD, bm.ps[:mBD], bm.model.parameters) |> vec |> first
-@info "Learned mBD ≈ $(round(mBD_learned, digits=4))"
+# oBD global
+@load jld oBD_physical
+@info "Global oBD ≈ $(round(oBD_physical, digits=4))"
 
-# Try to fetch per-sample oBD predictions from val_diffs (if the trainer provided them)
-oBD_vals = nothing
-if bm.val_diffs !== nothing && hasproperty(bm.val_diffs, :oBD)
-    oBD_vals = Array(bm.val_diffs.oBD)  # should be a vector matching val rows
-    @info "Collected $(length(oBD_vals)) oBD predictions from validation."
-    @save joinpath(results_dir, "$(testid)_val_oBD.jld2") oBD_vals
-end
+@load jld mBD_phys
+histogram(mBD_phys; bins=:sturges, xlabel="learned mBD", ylabel="count",
+          title="Distribution of learned mBD", legend=false)
+vline!([mean(mBD_phys)]; lw=2, label=false)  # mean marker
+@info "Saved histogram to $(joinpath(results_dir, "mBD_histogram.png"))"
+
+# # MTD SOCdensity
+# socdensity_pred = val_tables[:SOCconc_pred] .* val_tables[:BD_pred] .* (1 .- val_tables[:CF_pred]);
+# socdensity_true = val_tables[:SOCdensity];
+# r2_sd, mse_sd = r2_mse(socdensity_true, socdensity_pred);
+# plt = histogram2d(
+#     socdensity_pred, socdensity_true;
+#     nbins=(40,40), cbar=true, xlab="Pred SOCdensity MTD", ylab="True SOCdensity",
+#     title = "SOCdensity\nR²=$(round(r2_sd,digits=3)), MSE=$(round(mse_sd,digits=3))",
+#     normalize=false
+# )
+# lims = extrema(vcat(socdensity_true, socdensity_pred))
+# Plots.plot!(plt, [lims[1], lims[2]], [lims[1], lims[2]];
+#     color=:black, linewidth=2, label="1:1 line",
+#     aspect_ratio=:equal, xlims=lims, ylims=lims
+# )
+# savefig(plt, joinpath(results_dir, "$(testid)_accuracy_SOCdensity.MTD.png"));
+
+
