@@ -85,7 +85,7 @@ df[:, names_cov] .= (df[:, names_cov] .- means') ./ stds'
 
 println(size(df))
 df.row_id = 1:nrow(df);
-CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed.csv"), df)
+# CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed.csv"), df)
 
 # split train and test
 raw_val = dropmissing(df, target_names);
@@ -95,8 +95,8 @@ train_ids, val_ids = splitobs(collect(eligible); at=0.8, shuffle=true);
 test  = df[in.(df.row_id, Ref(val_ids)), :];
 train = df[.!in.(df.row_id, Ref(val_ids)), :];
 
-CSV.write(joinpath(@__DIR__, "data/lucas_train.csv"), train)
-CSV.write(joinpath(@__DIR__, "data/lucas_test.csv"), test)
+# CSV.write(joinpath(@__DIR__, "data/lucas_train.csv"), train)
+# CSV.write(joinpath(@__DIR__, "data/lucas_test.csv"), test)
 
 # plot BD vs SOCconc
 bd_lims = extrema(skipmissing(df[:, "BD"]))      
@@ -111,7 +111,9 @@ plt = histogram2d(
     #title      = "SOCdensity-MTD\nR2=$(round(r2, digits=3)), MAE=$(round(mae, digits=3)), bias=$(round(bias, digits=3))",
     color      = cgrad(:bamako, rev=true),
     normalize  = false,
-    size = (460, 400)
+    size = (460, 400),
+    xlims     = (0, 1.8),
+    ylims     = (0, 0.6)
 )   
 savefig(plt, joinpath(@__DIR__, "./eval/00_truth_BD.vs.SOCconc.png"))
 
