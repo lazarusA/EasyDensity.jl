@@ -265,6 +265,56 @@ histogram(mBD_phys; bins=:sturges, xlabel="learned mBD", ylabel="count",
 vline!([mean(mBD_phys)]; lw=2, label=false)  # mean marker
 @info "Saved histogram to $(joinpath(results_dir, "mBD_histogram.png"))"
 
+# plot mBD_phys and texture
+texture = CSV.read(joinpath(@__DIR__, "data/lucas_test_texture.csv"), DataFrame; normalizenames=true)
+texture.mBD_phys = mBD_phys
+
+
+for col in (:clay, :silt, :sand)
+    p = Plots.scatter(texture[!, col], texture.BD; label="BD", xlabel=String(col), ylabel="Density", legend=:topleft)
+    Plots.scatter!(texture[!, col], texture.mBD_phys; label="mBD_phys")
+    title!(p, "$(col) vs density")
+    display(p)
+    # savefig("$(col)_vs_density.png")   # or display without saving
+end
+
+# drop rows with missings in these columns
+tex = dropmissing(texture, [:clay, :sand, :BD, :mBD_phys])
+cmin = 0.7 #minimum(vcat(tex.BD, tex.mBD_phys))
+cmax = 1.6 #maximum(vcat(tex.BD, tex.mBD_phys))
+
+# BD plot
+p1 = Plots.scatter(tex.clay, tex.sand;
+    zcolor = tex.BD,
+    xlabel = "Clay",
+    ylabel = "Sand",
+    # colorbar_title = "BD",
+    title = "observed BD",
+    legend = false,
+    colorbar = true,
+    color = cgrad(:viridis, rev=true),
+    clim = (cmin, cmax),
+    markersize = 2.5, markerstrokewidth = 0,
+    aspect_ratio = :equal)
+
+# mBD_phys plot
+p2 = Plots.scatter(tex.clay, tex.sand;
+    zcolor = tex.mBD_phys,
+    xlabel = "Clay",
+    ylabel = "Sand",
+    # colorbar_title = "mBD_phys",
+    title = "mineral BD",
+    legend = false,
+    colorbar = true,
+    color = cgrad(:viridis, rev=true),
+    clim = (cmin, cmax),
+    markersize = 2.5, markerstrokewidth = 0,
+    aspect_ratio = :equal)
+
+finalplot = Plots.plot(p1, p2, layout=(1,2), size=(900,450))
+display(finalplot)
+savefig(finalplot, joinpath(results_dir, "$(testid)_texture.vs.BD.png")) 
+
 # # MTD SOCdensity
 # socdensity_pred = val_tables[:SOCconc_pred] .* val_tables[:BD_pred] .* (1 .- val_tables[:CF_pred]);
 # socdensity_true = val_tables[:SOCdensity];
