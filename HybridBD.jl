@@ -76,19 +76,19 @@ predictors = Symbol.(names(df))[19:end-2]; # CHECK EVERY TIME
 nf = length(predictors)
 
 # search space
-hidden_configs = [  
+hidden_configs = [ 
+    (512, 256, 128, 64, 32, 16),
+    (512, 256, 128, 64, 32), 
     (256, 128, 64, 32, 16),
     (256, 128, 64, 32),
     (256, 128, 64),
-    (256, 128),
     (128, 64, 32, 16),
     (128, 64, 32),
     (128, 64),
-    (64, 32, 16),
-    (64, 32)
+    (64, 32, 16)
 ];
 batch_sizes = [128, 256, 512];
-lrs = [1e-2, 1e-3, 1e-4];
+lrs = [1e-3, 5e-4, 1e-4];
 activations = [relu, tanh, swish, gelu];
 
 
@@ -138,18 +138,19 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
             nepochs = 200,
             batchsize = bs,
             opt = AdamW(lr),
-            training_loss = :r2,
+            training_loss = :mse,
             loss_types = [:mse, :r2],
             shuffleobs = true,
             file_name = "model_$(testid)_$(test_fold).jld2",
             random_seed = 42,
-            patience = 10,
+            patience = 15,
             yscale = identity,
             monitor_names = [:oBD, :mBD],
             agg = mean,
             return_model = :best,
             show_progress = false,
-            plotting = false
+            plotting = false,
+            hybrid_name = "fold$(test_fold)" 
         )
 
         if rlt.best_loss < best_val_loss
@@ -176,17 +177,24 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
     (x_test,  y_test)  = prepare_data(best_hm, test_df)
     ps, st = best_result.ps, best_result.st
     ŷ_test, st_test = best_hm(x_test, ps, LuxCore.testmode(st))
+    println(propertynames(ŷ_test))
+    println(propertynames(ŷ_test.parameters))
 
-    ŷ_df = toDataFrame(ŷ_test, targets)
-    for tgt in target_names
-        test_df["pred_$(tgt)"] = ŷ_df[:, tgt] 
-    end
-    param_names = [:oBD, :mBD]
-    for p in param_names
-        if hasproperty(ŷ_test, p)
-            test_df[Symbol("fitted_", p)] = getproperty(ŷ_test, p)
+    for var in [:BD, :SOCconc, :CF, :SOCdensity, :oBD, :mBD]
+        if hasproperty(ŷ_test, var)
+            val = getproperty(ŷ_test, var)
+
+            if val isa AbstractVector && length(val) == nrow(test_df)
+                test_df[!, Symbol("pred_", var)] = val # per row
+
+            elseif (val isa Number) || (val isa AbstractVector && length(val) == 1)
+                test_df[!, Symbol("pred_", var)] = fill(Float32(val isa AbstractVector ? first(val) : val), nrow(test_df))
+            end
+
+
         end
     end
+    
     rlt_list_pred[test_fold] = test_df
 
 end
