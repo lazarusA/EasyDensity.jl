@@ -138,7 +138,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
             training_loss = :mse,
             loss_types = [:mse, :r2],
             shuffleobs = true,
-            file_name = "model_$(testid)_fold$(test_fold).jld2",
+            file_name = "history_$(testid)_fold$(test_fold).jld2",
             random_seed = 42,
             patience = 15,
             yscale = identity,
@@ -159,9 +159,10 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
 
     # register best hyper paramets
     agg_name = Symbol("mean")
-    r2s  = map(vh -> getproperty(vh, agg_name), rlt.val_history.r2)
-    mses = map(vh -> getproperty(vh, agg_name), rlt.val_history.mse)
-    best_epoch = rlt.best_epoch
+    r2s  = map(vh -> getproperty(vh, agg_name), best_result.val_history.r2)
+    mses = map(vh -> getproperty(vh, agg_name), best_result.val_history.mse)
+    best_epoch = best_result.best_epoch
+
 
     local_results_param = DataFrame(
         h = string(best_config.h),
@@ -201,6 +202,8 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
 
 end
 
+rlt_param = vcat(rlt_list_param...)
+rlt_pred = vcat(rlt_list_pred...)
 
 CSV.write(joinpath(results_dir, "$(testid)_cv.pred.csv"), rlt_pred)
 CSV.write(joinpath(results_dir, "$(testid)_hyperparams.csv"), rlt_param)

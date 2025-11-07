@@ -92,6 +92,8 @@ for col in [:clay, :silt, :sand]
     end) => col)
 end
 
+df .= coalesce.(df, NaN)
+
 CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_v20251103.csv"), df_o)
 
 # # split train and test
