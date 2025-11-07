@@ -92,7 +92,7 @@ for col in [:clay, :silt, :sand]
     end) => col)
 end
 
-df .= coalesce.(df, NaN)
+df_o[!, target_names]    .= coalesce.(df_o[!, target_names], NaN)
 
 CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_v20251103.csv"), df_o)
 

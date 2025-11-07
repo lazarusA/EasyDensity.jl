@@ -97,7 +97,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
 
 @info "Threads available: $(Threads.nthreads())"
 @time Threads.@threads for test_fold in 1:k
-    @info "Training outer fold $test_fold of $k on thread $(threadid())"
+    @info "Training outer fold $test_fold of $k on thread $(Threads.threadid())"
 
     train_folds = setdiff(1:k, test_fold)
     train_idx = findall(in(train_folds), folds)
