@@ -154,7 +154,6 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
         )
 
         if rlt.best_loss < best_val_loss
-            best_val_loss = rlt.best_loss
             best_config = (h=h, bs=bs, lr=lr, act=act)
             best_result = rlt
             best_hm = deepcopy(hm_local)
@@ -162,15 +161,22 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
     end
 
     # register best hyper paramets
+    agg_name = Symbol("mean")
+    r2s  = map(vh -> getproperty(vh, agg_name), best_result.val_history.r2)
+    mses = map(vh -> getproperty(vh, agg_name), best_result.val_history.mse)
+    best_epoch = best_result.best_epoch
+
+
     local_results_param = DataFrame(
         h = string(best_config.h),
         bs = best_config.bs,
         lr = best_config.lr,
         act = string(best_config.act),
-        val_loss = best_val_loss,
+        r2 = r2s[best_epoch],
+        mse = mses[best_epoch],
+        best_epoch = best_epoch,
         test_fold = test_fold
-    ) |> DataFrame
-
+    )
     rlt_list_param[test_fold] = local_results_param
     
 
