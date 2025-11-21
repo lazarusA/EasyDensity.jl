@@ -23,11 +23,13 @@ using JLD2
 
 # 03 - sparse data
 testid = "02_multiNN";
+version = "v20251120";
+
 results_dir = joinpath(@__DIR__, "eval");
 target_names = [:BD, :SOCconc, :CF, :SOCdensity];
 
 # input
-df = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed_v20251113.csv"), DataFrame; normalizenames=true)
+df = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), DataFrame; normalizenames=true)
 
 # scales
 scalers = Dict(
@@ -178,8 +180,8 @@ end
 rlt_param = vcat(rlt_list_param...)
 rlt_pred = vcat(rlt_list_pred...)
 
-CSV.write(joinpath(results_dir, "$(testid)_cv.pred_v20251113.csv"), rlt_pred)
-CSV.write(joinpath(results_dir, "$(testid)_hyperparams_v20251113.csv"), rlt_param)
+CSV.write(joinpath(results_dir, "$(testid)_cv.pred_$version.csv"), rlt_pred)
+CSV.write(joinpath(results_dir, "$(testid)_hyperparams_$version.csv"), rlt_param)
 
 
 # # helper for metrics calculation

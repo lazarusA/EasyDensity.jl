@@ -3,7 +3,8 @@ using Revise
 using EasyHybrid
 using EasyHybrid.MLUtils
 using Plots
-
+using DataFrames
+using Statistics
 version = "v20251120"
 
 # ? move the `csv` file into the `BulkDSOC/data` folder (create folder)
@@ -15,6 +16,31 @@ target_names = [:BD, :SOCconc, :CF, :SOCdensity];
 rename!(df_o, :bulk_density_fe => :BD, :soc => :SOCconc, :coarse_vol => :CF); # rename as in hybrid model
 # df_o[!, :SOCconc] .= df_o[!, :SOCconc]; # stay as g/kg
 df_o[!,:SOCdensity] = df_o.BD .* df_o.SOCconc .* (1 .- df_o.CF); # SOCdensity kg/cm3
+
+# filter horizon depth = 10 cm
+df_o = df_o[df_o.hzn_dep .== 10, :]
+select!(df_o, Not(:hzn_dep))
+println(size(df_o))
+
+# identify noise time supervise
+gdf = groupby(df_o, :id)
+df_o.maxdiff = fill(0.0, nrow(df_o));  # initialize noise column
+# compute max abs difference of SOCconc per id
+for sub in groupby(df_o, :id)
+    soc = sort(sub.SOCconc)
+
+    if length(soc) < 2
+        maxdiff = -1
+    else
+        maxdiff = maximum(abs.(diff(soc)))
+    end
+
+    df_o[df_o.id .== sub.id[1], :maxdiff] .= maxdiff
+    
+end
+println(size(df_o))
+df = df[df.maxdiff .<= 50, :]
+println(size(df_o))
 
 coords = collect(zip(df_o.lat, df_o.lon))
 
@@ -96,11 +122,8 @@ end
 
 df_o[!, target_names]    .= coalesce.(df_o[!, target_names], NaN)
 
-df = df_o[df_o.hzn_dep .== 10, :]
-println(size(df))
-select!(df, Not(:hzn_dep))
-println(size(df))
-CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df)
+
+CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df);
 
 # # split train and test
 # raw_val = dropmissing(df_o, target_names);
@@ -135,9 +158,9 @@ CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df)
 # savefig(plt, joinpath(@__DIR__, "./eval/00_truth_BD.vs.SOCconc.png"))
 
 # check distribution of BD, SOCconc, CF
-for col in ["BD", "SOCconc", "CF", "SOCdensity"]
+for col in ["BD", "SOCconc", "CF", "SOCdensity", "maxdiff"]
     # values = log10.(df[:, col])
-    values = df_o[:, col]
+    values = df[:, col]
     histogram(
         values;
         bins = 50,
@@ -147,5 +170,16 @@ for col in ["BD", "SOCconc", "CF", "SOCdensity"]
         lw = 1,
         legend = false
     )
-    savefig(joinpath(@__DIR__, "./eval/histogram_$col.png"))
+    savefig(joinpath(@__DIR__, "./data/histogram_$col.png"))
 end
+
+# # export covariate names
+# open(joinpath(@__DIR__, "./data/cov_names.txt"), "w") do f
+#     for name in sort(names(df)[18:end-2])
+#         println(f, name)
+#     end
+# end
+
+
+
+
