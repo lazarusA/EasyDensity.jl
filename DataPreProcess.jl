@@ -18,12 +18,12 @@ rename!(df_o, :bulk_density_fe => :BD, :soc => :SOCconc, :coarse_vol => :CF); # 
 df_o[!,:SOCdensity] = df_o.BD .* df_o.SOCconc .* (1 .- df_o.CF); # SOCdensity kg/cm3
 
 # filter horizon depth = 10 cm
-df_o = df_o[df_o.hzn_dep .== 10, :]
-select!(df_o, Not(:hzn_dep))
+df_o = df_o[df_o.hzn_dep .== 10, :];
+select!(df_o, Not(:hzn_dep));
 println(size(df_o))
 
 # identify noise time supervise
-gdf = groupby(df_o, :id)
+gdf = groupby(df_o, :id);
 df_o.maxdiff = fill(0.0, nrow(df_o));  # initialize noise column
 # compute max abs difference of SOCconc per id
 for sub in groupby(df_o, :id)
@@ -39,13 +39,13 @@ for sub in groupby(df_o, :id)
     
 end
 println(size(df_o))
-df = df[df.maxdiff .<= 50, :]
+df_o = df_o[df_o.maxdiff .<= 50, :];
 println(size(df_o))
 
-coords = collect(zip(df_o.lat, df_o.lon))
+coords = collect(zip(df_o.lat, df_o.lon));
 
 # t clean covariates
-names_cov = Symbol.(names(df_o))[19:end-1]
+names_cov = Symbol.(names(df_o))[18:end-2]
 # println("original cov number:", length(names_cov))
 # names_meta = Symbol.(names(df_o))[1:18]
 
@@ -122,8 +122,8 @@ end
 
 df_o[!, target_names]    .= coalesce.(df_o[!, target_names], NaN)
 
-
-CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df);
+println(size(df_o));
+CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df_o);
 
 # # split train and test
 # raw_val = dropmissing(df_o, target_names);
@@ -160,7 +160,7 @@ CSV.write(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), df);
 # check distribution of BD, SOCconc, CF
 for col in ["BD", "SOCconc", "CF", "SOCdensity", "maxdiff"]
     # values = log10.(df[:, col])
-    values = df[:, col]
+    values = df_o[:, col]
     histogram(
         values;
         bins = 50,
