@@ -37,6 +37,14 @@ function SOCD_model(; SOCconc, CF, oBD, mBD)
     return (; BD, SOCconc, CF, SOCdensity, oBD, mBD)  # supervise both BD and SOCconc
 end
 
+# scales
+scalers = Dict(
+    :SOCconc   => 0.151, # g/kg, log(x+1)*0.151
+    :CF        => 0.263, # percent, log(x+1)*0.263
+    :BD        => 0.529, # g/cm3, x*0.529
+    :SOCdensity => 0.167, # kg/m3, log(x)*0.167
+);
+
 # param bounds
 parameters = (
     SOCconc = (0.01f0, 0.0f0, 1.0f0),   # fraction
@@ -146,7 +154,6 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
     r2s  = map(vh -> getproperty(vh, agg_name), best_result.val_history.r2)
     mses = map(vh -> getproperty(vh, agg_name), best_result.val_history.mse)
     best_epoch = best_result.best_epoch
-
 
     local_results_param = DataFrame(
         h = string(best_config.h),

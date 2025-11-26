@@ -1,18 +1,11 @@
 using Pkg
 # Pkg.activate(".")
-using Revise
-using EasyHybrid
-using Lux
-using Pkg
-Pkg.activate("projects/BulkDSOC")
-Pkg.develop(path=pwd())
-Pkg.instantiate()
-
+# Pkg.instantiate()
 using Revise
 using EasyHybrid
 using Lux
 using Optimisers
-using GLMakie
+using WGLMakie
 using Random
 using LuxCore
 using CSV, DataFrames
@@ -21,12 +14,11 @@ using Statistics
 using Plots
 using JLD2
 
-# 03 - sparse data
+# 02 - multivariate NN
 testid = "02_multiNN";
-version = "v20251120";
-
+version = "v20251125";
 results_dir = joinpath(@__DIR__, "eval");
-target_names = [:BD, :SOCconc, :CF, :SOCdensity];
+targets = [:BD, :SOCconc, :SOCdensity, :CF];
 
 # input
 df = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), DataFrame; normalizenames=true)
@@ -39,22 +31,8 @@ scalers = Dict(
     :SOCdensity => 0.167, # kg/m3, log(x)*0.167
 );
 
-for tgt in target_names
-    # println(tgt, "------------")
-    # println(minimum(df[:,tgt]), "  ", maximum(df[:,tgt]))
-    if tgt in (:SOCconc, :CF)
-        df[!, tgt] .= log.(df[!, tgt] .+ 1) 
-        # println(minimum(df[:,tgt]), "  ", maximum(df[:,tgt]))
-    elseif tgt == :SOCdensity
-        df[!, tgt] .= log.(df[!, tgt]) 
-    end
-
-    df[!, tgt] .= df[!, tgt] .* scalers[tgt]
-    # println(minimum(df[:,tgt]), "  ", maximum(df[:,tgt]))
-end
-
 # predictor
-predictors = Symbol.(names(df))[19:end-2] # CHECK EVERY TIME 
+predictors = Symbol.(names(df))[18:end-6] # CHECK EVERY TIME 
 nf = length(predictors)
 
 # search space
@@ -76,8 +54,8 @@ activations = [relu, tanh, swish, gelu];
 # cross-validation
 k = 5;
 folds = make_folds(df, k = k, shuffle = true);
-rlt_list_param = Vector{DataFrame}(undef, k)
-rlt_list_pred = Vector{DataFrame}(undef, k)  
+rlt_list_param = Vector{DataFrame}(undef, k);
+rlt_list_pred = Vector{DataFrame}(undef, k);  
 
 @info "Threads available: $(Threads.nthreads())"
 @time Threads.@threads for test_fold in 1:k
@@ -120,10 +98,9 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
             random_seed = 42,
             patience = 15,
             yscale = identity,
-            monitor_names = [:oBD, :mBD],
             agg = mean,
             return_model = :best,
-            show_progress = false,
+            show_progress = true,
             plotting = false,
             hybrid_name = "$(testid)_fold$(test_fold)" 
         )
@@ -133,6 +110,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
             best_result = rlt
             best_hm = deepcopy(hm_local)
         end
+    end
 
     # register best hyper paramets
     agg_name = Symbol("mean")
