@@ -126,12 +126,12 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
                 training_loss = :mse,
                 loss_types = [:mse, :r2],
                 shuffleobs = true,
-                file_name = "history_$(testid)_fold$(test_fold).jld2",
+                file_name = "$(tgt)_history_$(testid)_fold$(test_fold).jld2",
                 patience = 15,
                 return_model = :best,
                 plotting = false,
-                show_progress = false，
-                hybrid_name = "$(testid)_fold$(test_fold)" 
+                show_progress = false,
+                hybrid_name = "$(tgt)_$(testid)_fold$(test_fold)" 
             )
 
             if rlt.best_loss < best_loss
@@ -142,7 +142,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
             end
         end
 
-        agg = :mean
+        agg = :sum
         r2s  = map(vh -> getproperty(vh, agg), best_rlt.val_history.r2)
         mses = map(vh -> getproperty(vh, agg), best_rlt.val_history.mse)
         be   = best_rlt.best_epoch
@@ -169,10 +169,11 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
 
             # expand to full rows
             full_pred = fill(NaN32, nrow(test_df_full))
-            idx_clean = findall(!ismissing ∘ getfield(_, tgt), test_df_full)
+            idx_clean = findall(x -> !ismissing(getfield(x, tgt)), eachrow(test_df_full))
             full_pred[idx_clean] .= preds_clean
 
             fold_preds[!, Symbol("pred_", tgt)] = full_pred
+
 
         catch err
             @warn "Prediction failed for $tgt on fold $test_fold — using NaN"

@@ -71,7 +71,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
     best_val_loss = Inf
     best_config = nothing
     best_result = nothing
-    best_hm = nothing
+    best_nn = nothing
     results_param = DataFrame(h=String[], bs=Int[], lr=Float64[], act=String[], r2=Float64[], mse=Float64[], best_epoch=Int[], test_fold=Int[])
 
     # param search by looping....    
@@ -108,7 +108,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
         if rlt.best_loss < best_val_loss
             best_config = (h=h, bs=bs, lr=lr, act=act)
             best_result = rlt
-            best_hm = deepcopy(hm_local)
+            best_nn = deepcopy(nn_local)
         end
     end
 
@@ -131,11 +131,10 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
     rlt_list_param[test_fold] = local_results_param
     
 
-    (x_test,  y_test)  = prepare_data(best_hm, test_df)
+    (x_test,  y_test)  = prepare_data(best_nn, test_df)
     ps, st = best_result.ps, best_result.st
-    ŷ_test, st_test = best_hm(x_test, ps, LuxCore.testmode(st))
+    ŷ_test, st_test = best_nn(x_test, ps, LuxCore.testmode(st))
     println(propertynames(ŷ_test))
-    println(propertynames(ŷ_test.parameters))
 
     for var in [:BD, :SOCconc, :CF, :SOCdensity]
         if hasproperty(ŷ_test, var)
