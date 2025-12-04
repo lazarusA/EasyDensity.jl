@@ -88,7 +88,6 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
 
     # Storage for this fold
     fold_params = DataFrame()
-    fold_preds  = DataFrame(id = test_df_full.id)  # keep ID
 
     # -----------------------------
     # Loop over single target
@@ -99,10 +98,11 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
         # ----- train: drop missing -----
         train_df_t = dropmissing(train_df, tgt)
         if nrow(train_df_t) == 0
-            @warn "No training rows for $tgt — fill NaN"
-            fold_preds[!, Symbol("pred_", tgt)] = fill(NaN32, nrow(test_df_full))
+            @warn "No training rows for $tgt — filling NaN for all rows"
+            test_df_full[!, Symbol("pred_", tgt)] = fill(NaN32, nrow(test_df_full))
             continue
         end
+
 
         best_loss   = Inf
         best_cfg    = nothing
@@ -163,36 +163,41 @@ rlt_list_pred = Vector{DataFrame}(undef, k)
         ps, st = best_rlt.ps, best_rlt.st
         
         try
+            # remove missing rows for the current target
             test_df_t = dropmissing(test_df_full, tgt)
+
+            # prepare model input
             x_test, _ = prepare_data(best_nn, test_df_t)
             ŷ, _ = best_nn(x_test, ps, LuxCore.testmode(st))
 
-            preds_clean = ŷ[tgt]                   # predictions for filtered test rows
-            rids_clean  = test_df_t.row_id          # corresponding row_ids
-
-            # full prediction array
-            full_pred = fill(NaN32, nrow(test_df_full))
-
-            # map row_id -> position in test_df_full
-            id_to_pos = Dict(test_df_full.row_id[i] => i for i in 1:nrow(test_df_full))
-
-            # fill only matching rows
-            for (rid, p) in zip(rids_clean, preds_clean)
-                full_pred[id_to_pos[rid]] = p
-            end
-
-            fold_preds[!, Symbol("pred_", tgt)] = full_pred
+            preds_clean = ŷ[tgt]  # predictions on filtered rows
+            rids_clean  = test_df_t.row_id # row_ids for those rows
+            
+            pred_df = DataFrame(
+                row_id = rids_clean,
+                Symbol("pred_", tgt) => preds_clean
+            )
+            
+            test_df_full = leftjoin(
+                test_df_full,
+                pred_df,
+                on = :row_id,
+                makeunique = true
+            )
+            
+            replace!(test_df_full[!, Symbol("pred_", tgt)], missing => NaN32)
 
         catch err
             @warn "Prediction failed for $tgt on fold $test_fold — using NaN"
-            fold_preds[!, Symbol("pred_", tgt)] = fill(NaN32, nrow(test_df_full))
+            test_df_full[!, Symbol("pred_", tgt)] = fill(NaN32, nrow(test_df_full))
         end
+
 
     end
 
     # save results for this fold
     rlt_list_param[test_fold] = fold_params
-    rlt_list_pred[test_fold]  = fold_preds
+    rlt_list_pred[test_fold]  = test_df_full
 end
 
 
