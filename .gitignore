@@ -4,6 +4,7 @@ Manifest.toml
 *.pdf
 *.svg
 /output_tmp
+/model
 /eval
 /data/*.csv
 /data/*.png
