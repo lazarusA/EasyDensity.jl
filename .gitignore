@@ -9,3 +9,4 @@ Manifest.toml
 /data/*.csv
 /data/*.png
 .ipynb_checkpoints/
+/model

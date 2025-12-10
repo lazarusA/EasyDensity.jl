@@ -16,12 +16,12 @@ using JLD2
 
 # 02 - multivariate NN
 testid = "02_multiNN";
-version = "v20251125";
+version = "v20251209";
 results_dir = joinpath(@__DIR__, "eval");
 targets = [:BD, :SOCconc, :SOCdensity, :CF];
 
 # input
-df = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed_$version.csv"), DataFrame; normalizenames=true)
+df = CSV.read(joinpath(@__DIR__, "data/lucas_preprocessed_v20251125.csv"), DataFrame; normalizenames=true)
 
 # scales
 scalers = Dict(
@@ -35,6 +35,7 @@ scalers = Dict(
 predictors = Symbol.(names(df))[18:end-6] # CHECK EVERY TIME 
 nf = length(predictors)
 
+# configuration
 # search space
 hidden_configs = [ 
     (512, 256, 128, 64, 32, 16),
@@ -44,22 +45,29 @@ hidden_configs = [
     (256, 128, 64),
     (128, 64, 32, 16),
     (128, 64, 32),
-    (128, 64),
     (64, 32, 16)
 ];
 batch_sizes = [128, 256, 512];
 lrs = [1e-3, 5e-4, 1e-4];
-activations = [relu, tanh, swish, gelu];
+activations = [relu, swish, gelu];
+
+configs = [(h=h, bs=bs, lr=lr, act=act)
+           for h in hidden_configs
+           for bs in batch_sizes
+           for lr in lrs
+           for act in activations]
+
+println(length(configs))
 
 # cross-validation
 k = 5;
 folds = make_folds(df, k = k, shuffle = true);
 rlt_list_param = Vector{DataFrame}(undef, k);
 rlt_list_pred = Vector{DataFrame}(undef, k);  
-
 @info "Threads available: $(Threads.nthreads())"
-@time Threads.@threads for test_fold in 1:k
-    @info "Training outer fold $test_fold of $k on thread $(Threads.threadid())"
+
+@time for test_fold in 1:k
+    @info "Training outer fold $test_fold of $k"
 
     train_folds = setdiff(1:k, test_fold)
     train_idx = findall(in(train_folds), folds)
@@ -68,47 +76,64 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
     test_df = df[test_idx, :]
     
     # track best config for this outer fold
+    lk = ReentrantLock()
     best_val_loss = Inf
     best_config = nothing
     best_result = nothing
-    best_nn = nothing
+    best_model = nothing
+    best_model_path = nothing
     results_param = DataFrame(h=String[], bs=Int[], lr=Float64[], act=String[], r2=Float64[], mse=Float64[], best_epoch=Int[], test_fold=Int[])
 
     # param search by looping....    
-    for h in hidden_configs, bs in batch_sizes, lr in lrs, act in activations
-        println("Testing h=$h, bs=$bs, lr=$lr, activation=$act")
+    Threads.@threads for i in 1:length(configs)
+        try
+            cfg = configs[i]
         
-        nn_local = EasyHybrid.constructNNModel(
-            predictors, targets;
-            hidden_layers = collect(h),
-            activation = act,
-            scale_nn_outputs = true,
-            input_batchnorm = true
-        )
+            h  = cfg.h
+            bs = cfg.bs
+            lr = cfg.lr
+            act = cfg.act
+            println("Testing h=$h, bs=$bs, lr=$lr, activation=$act")
         
-        rlt = train(
-            nn_local, train_df, ();
-            nepochs = 200,
-            batchsize = bs,
-            opt = AdamW(lr),
-            training_loss = :mse,
-            loss_types = [:mse, :r2],
-            shuffleobs = true,
-            file_name = "history_$(testid)_fold$(test_fold).jld2",
-            random_seed = 42,
-            patience = 15,
-            yscale = identity,
-            agg = mean,
-            return_model = :best,
-            show_progress = true,
-            plotting = false,
-            hybrid_name = "$(testid)_fold$(test_fold)" 
-        )
-
-        if rlt.best_loss < best_val_loss
-            best_config = (h=h, bs=bs, lr=lr, act=act)
-            best_result = rlt
-            best_nn = deepcopy(nn_local)
+            nn_local = EasyHybrid.constructNNModel(
+                predictors, targets;
+                hidden_layers = collect(h),
+                activation = act,
+                scale_nn_outputs = true,
+                input_batchnorm = false
+            )
+            
+            rlt = train(
+                nn_local, train_df, ();
+                nepochs = 200,
+                batchsize = bs,
+                opt = AdamW(lr),
+                training_loss = :mse,
+                loss_types = [:mse, :r2],
+                shuffleobs = true,
+                file_name = "$(testid)_config$(i)_fold$(test_fold).jld2",
+                random_seed = 42,
+                patience = 15,
+                yscale = identity,
+                agg = mean,
+                return_model = :best,
+                show_progress = false,
+                plotting = false,
+                hybrid_name = "$(testid)_config$(i)_fold$(test_fold)"
+            )
+    
+            lock(lk)
+            if rlt.best_loss < best_val_loss
+                best_val_loss = rlt.best_loss
+                best_config = cfg
+                best_result = rlt
+                best_model = deepcopy(nn_local)
+                best_model_path = "best_model_$(testid)_config$(i)_fold$(test_fold)"
+            end
+            unlock(lk)
+        catch err
+            @error "Thread $i crashed" exception = err
+            @error sprint(showerror, err)
         end
     end
 
@@ -116,7 +141,7 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
     agg_name = Symbol("mean")
     r2s  = map(vh -> getproperty(vh, agg_name), best_result.val_history.r2)
     mses = map(vh -> getproperty(vh, agg_name), best_result.val_history.mse)
-    best_epoch = best_result.best_epoch
+    best_epoch = max(best_result.best_epoch, 1)
 
     local_results_param = DataFrame(
         h = string(best_config.h),
@@ -126,15 +151,22 @@ rlt_list_pred = Vector{DataFrame}(undef, k);
         r2 = r2s[best_epoch],
         mse = mses[best_epoch],
         best_epoch = best_epoch,
-        test_fold = test_fold
+        test_fold = test_fold,
+        path = best_model_path,
     )
     rlt_list_param[test_fold] = local_results_param
+
+    # move best models and then remove tmp files
+    cp(joinpath("output_tmp", best_model_path * ".jld2"), joinpath("model", best_model_path * ".jld2"); force=true) 
+    for f in readdir("output_tmp"; join=true)
+        rm(f; force=true, recursive=true)
+    end
     
 
-    (x_test,  y_test)  = prepare_data(best_nn, test_df)
+    (x_test,  y_test)  = prepare_data(best_model, test_df)
     ps, st = best_result.ps, best_result.st
-    ŷ_test, st_test = best_nn(x_test, ps, LuxCore.testmode(st))
-    println(propertynames(ŷ_test))
+    ŷ_test, st_test = best_model(x_test, ps, LuxCore.testmode(st))
+    # println(propertynames(ŷ_test))
 
     for var in [:BD, :SOCconc, :CF, :SOCdensity]
         if hasproperty(ŷ_test, var)
@@ -160,67 +192,3 @@ rlt_pred = vcat(rlt_list_pred...)
 CSV.write(joinpath(results_dir, "$(testid)_cv.pred_$version.csv"), rlt_pred)
 CSV.write(joinpath(results_dir, "$(testid)_hyperparams_$version.csv"), rlt_param)
 
-
-# # helper for metrics calculation
-# r2_mse(y_true, y_pred) = begin
-#     ss_res = sum((y_true .- y_pred).^2)
-#     ss_tot = sum((y_true .- mean(y_true)).^2)
-#     r2  = 1 - ss_res / ss_tot
-#     mse = mean((y_true .- y_pred).^2)
-#     (r2, mse)
-# end
-
-# # accuracy plots for SOCconc, BD, CF in original space
-# for tname in targets
-#     y_val_true = val_tables[tname]
-#     y_val_pred = val_tables[Symbol("$(tname)_pred")]
-
-#     # @assert all(in(Symbol.(names(df_out))).([tname, Symbol("$(tname)_pred")])) "Expected columns $(tname) and $(tname)_pred in saved val table."
-
-#     r2, mse = r2_mse(y_val_true, y_val_pred)
-
-#     plt = histogram2d(
-#         y_val_pred, y_val_true;
-#         nbins=(40, 40), cbar=true, xlab="Predicted", ylab="Observed",
-#         title = string(tname, "\nR²=", round(r2, digits=3), ", MSE=", round(mse, digits=3)),
-#         normalize=false
-#     )
-#     lims = extrema(vcat(y_val_true, y_val_pred))
-#     Plots.plot!(plt, [lims[1], lims[2]], [lims[1], lims[2]];
-#         color=:black, linewidth=2, label="1:1 line",
-#         aspect_ratio=:equal, xlims=lims, ylims=lims
-#     )
-#     savefig(plt, joinpath(results_dir, "$(testid)_accuracy_$(tname).png"))
-# end
-
-# # MTD SOCdensity
-# socdensity_pred = val_tables[:SOCconc_pred] .* val_tables[:BD_pred] .* (1 .- val_tables[:CF_pred]);
-# socdensity_true = val_tables[:SOCdensity];
-# r2_sd, mse_sd = r2_mse(socdensity_true, socdensity_pred);
-# plt = histogram2d(
-#     socdensity_pred, socdensity_true;
-#     nbins=(40,40), cbar=true, xlab="Pred SOCdensity MTD", ylab="True SOCdensity",
-#     title = "SOCdensity\nR²=$(round(r2_sd,digits=3)), MSE=$(round(mse_sd,digits=3))",
-#     normalize=false
-# )
-# lims = extrema(vcat(socdensity_true, socdensity_pred))
-# Plots.plot!(plt, [lims[1], lims[2]], [lims[1], lims[2]];
-#     color=:black, linewidth=2, label="1:1 line",
-#     aspect_ratio=:equal, xlims=lims, ylims=lims
-# )
-# savefig(plt, joinpath(results_dir, "$(testid)_accuracy_SOCdensity.MTD.png"));
-
-# # BD vs SOCconc predictions
-# plt = histogram2d(
-#     val_tables[:BD_pred], val_tables[:SOCconc_pred];
-#     nbins      = (30, 30),
-#     cbar       = true,
-#     xlab       = "BD",
-#     ylab       = "SOCconc",
-#     color      = cgrad(:bamako, rev=true),
-#     normalize  = false,
-#     size = (460, 400),
-#     xlims     = (0, 1.8),
-#     ylims     = (0, 0.6)
-# )   
-# savefig(plt, joinpath(results_dir, "$(testid)_BD.vs.SOCconc.png"));
