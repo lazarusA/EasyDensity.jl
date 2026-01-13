@@ -1,8 +1,0 @@
-{
-    "julia.numThreads": "10",
-    "julia.enableTelemetry": false,
-    "julia.symbolCacheDownload": true,
-    "terminal.integrated.commandsToSkipShell": [
-        "language-julia.interrupt"
-    ]
-}
