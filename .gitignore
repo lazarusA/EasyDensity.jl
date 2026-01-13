@@ -12,3 +12,4 @@ Manifest.toml
 /model
 *.vscode
 .DS_Store
+gmt.history
