@@ -90,7 +90,8 @@ with_theme(theme_latexfonts()) do
 
         fig = Figure(; size = (400, 350), fontsize=15)
         ax = Axis(fig[1, 1], xticks = (1:length(val_labels), rich.(val_labels, font=:bold)),
-            ylabel = "SOC density (kg/m3)")
+            ylabel = "SOC density (kg/m3)",
+            xlabelsize = 16, ylabelsize=16, xticklabelsize = 16, yticklabelsize=16,)
 
         for (indx, f) in enumerate(vars_to_check)
             datam = filter(x -> x !== missing, stability[:, "$(f)_range"])
@@ -113,11 +114,11 @@ end
 
 with_theme(theme_latexfonts()) do
 
-        fig = Figure(; size = (800, 350), fontsize=15)
+        fig = Figure(; size = (900, 350), fontsize=15)
         ax1 = Axis(fig[1, 1], xticks = (1:length(val_labels), rich.(val_labels, font=:bold)),
-            ylabel = "SOC density (kg/m3)")
+            ylabel = "SOC density (kg/m3)", xlabelsize = 16, ylabelsize=16, xticklabelsize = 16, yticklabelsize=16,)
         ax2 = Axis(fig[1, 2], xticks = (1:length(val_labels), rich.(val_labels, font=:bold)),
-            # ylabel = "SOC density (kg/m3)"
+            xlabelsize = 16, ylabelsize=16, xticklabelsize = 16, yticklabelsize=16,
             )
 
         for (indx, f) in enumerate(vars_to_check)
@@ -156,6 +157,7 @@ with_theme(theme_latexfonts()) do
         ylims!(ax2, -1, 13)
         hidespines!.([ax1, ax2], :t, :r)
         hidespines!(ax2, :l)
+        colgap!(fig.layout, 50)
         fig
         save(joinpath(@__DIR__, "../figures/temporal_plausibility_2.pdf"), fig)
 end

@@ -57,7 +57,9 @@ df = subset(
 with_theme(theme_latexfonts()) do
 
         fig = Figure(; size = (1200, 350), fontsize=15)
-        axs = [Axis(fig[1, j], aspect= 1, xlabel = "BD (g/cm3)", ylabel = "SOC content (g/kg)", titlefont = :regular)
+        axs = [Axis(fig[1, j], aspect= 1, xlabel = "BD (g/cm3)", ylabel = "SOC content (g/kg)",
+            xlabelsize = 16, ylabelsize=16, xticklabelsize = 16, yticklabelsize=16,
+            titlefont = :regular)
             for j in 1:4]
         plt = nothing
         set_upper_count = 500 

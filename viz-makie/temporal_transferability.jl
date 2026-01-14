@@ -35,7 +35,9 @@ with_theme(theme_latexfonts()) do
     for (k, t) in enumerate(targets)
         y_target = df[!, t]
         fig = Figure(; size = (1200, 350), fontsize=15)
-        axs = [Axis(fig[1, j], aspect= 1, xlabel = "Prediction", ylabel = "Observation", titlefont = :regular)
+        axs = [Axis(fig[1, j], aspect= 1, xlabel = "Prediction", ylabel = "Observation",
+            xlabelsize = 16, ylabelsize=16, xticklabelsize = 16, yticklabelsize=16,
+            titlefont = :regular)
             for j in 1:3]
         plt = nothing
         set_upper_count = 1000 # ? we could have different bounds for different targets, but having one to compare among all is good, unless we want to highlight the difference also on the amount of samples per variable. 
