@@ -123,10 +123,10 @@ mkpath(joinpath(@__DIR__, "../figures/"))
 points_css = Matrix(df_filter_mean[:, [:clay, :silt, :sand, :pred_oBD_function]])
 no_mss = replace(points_css, missing=>NaN)
 
-C = makecpt(cmap=:hot, range=(vmin_o, vmax_o), reverse=true);
+C = makecpt(cmap=:hot, range=(vmin_o, vmax_o), reverse=true, bg=true);
 
 # this only works in the REPL, it fails in vs-code (panel issues)
-ternary(no_mss, marker=:p, cmap=C, image=true,
+ternary(no_mss, marker=:p, cmap=C, image=true, figsize=10,
     frame = (
         annot=:auto,
         grid=:a,
@@ -135,31 +135,31 @@ ternary(no_mss, marker=:p, cmap=C, image=true,
         blabel="Silt",
         clabel="Clay",
         suffix=" %",
-        fill=:grey45,
+        fill=:grey95,
         ),
-    par=(FONT_ANNOT_PRIMARY=14,
-        FONT_LABEL=16,
+    par=(FONT_ANNOT_PRIMARY=12,
+        FONT_LABEL=14,
         MAP_LABEL_OFFSET="8p",
         MAP_ANNOT_OFFSET_PRIMARY="6p"
         )
         )
-colorbar!(pos=(paper=true, anchor=(13.5,5), size=(8,0.5), justify=:BL, vertical=true, triangles=true),
-    par=(FONT_ANNOT_PRIMARY=14, FONT_LABEL=16,),
+colorbar!(pos=(paper=true, anchor=(11,0), size=(8,0.5), justify=:BL, vertical=true, triangles=true),
+    par=(FONT_ANNOT_PRIMARY=14, FONT_LABEL=14,),
     frame=(
         annot=:auto,
         ticks=:auto,
         xlabel=rich("oBD (g / cm",  superscript("3"), ")")),
         show=false, # true, only works in the REPL, it fails in vs-code (panel issues)
-        savefig=joinpath(@__DIR__, "../figures/latent_oBD.pdf")
+        savefig=joinpath(@__DIR__, "../figures/latent_oBD_2.pdf")
         )
 
 #! now for mBD
 points_mBD = Matrix(df_filter_mean[:, [:clay, :silt, :sand, :pred_mBD_function]])
 no_mBD = replace(points_mBD, missing=>NaN)
 
-C = makecpt(cmap=:viridis, range=(vmin_m, vmax_m), reverse=true);
+C = makecpt(cmap=:viridis, range=(vmin_m, vmax_m), reverse=true, bg=true);
 
-ternary(no_mBD, marker=:p, cmap=C, ms=0.1, image=true,
+ternary(no_mBD, marker=:p, cmap=C, ms=0.1, image=true, figsize=10,
     frame = (
         annot=:auto,
         grid=:a,
@@ -168,21 +168,21 @@ ternary(no_mBD, marker=:p, cmap=C, ms=0.1, image=true,
         blabel="Silt",
         clabel="Clay",
         suffix=" %",
-        fill=:grey45,),
-    par=(FONT_ANNOT_PRIMARY=14,
-        FONT_LABEL=16,
+        fill=:grey95,),
+    par=(FONT_ANNOT_PRIMARY=12,
+        FONT_LABEL=14,
         MAP_LABEL_OFFSET="8p",
         MAP_ANNOT_OFFSET_PRIMARY="6p"
         )
         )
-colorbar!(pos=(paper=true, anchor=(13.5,5), size=(8,0.5), justify=:BL, vertical=true, triangles=true),
-    par=(FONT_ANNOT_PRIMARY=14, FONT_LABEL=16,),
+colorbar!(pos=(paper=true, anchor=(11,0), size=(8,0.5), justify=:BL, vertical=true, triangles=true),
+    par=(FONT_ANNOT_PRIMARY=14, FONT_LABEL=14,),
     frame=(
         annot=:auto,
         ticks=:auto,
         xlabel=rich("mBD (g /cm",  superscript("3"), ")")),
         show=false, # true, only works in the REPL, it fails in vs-code (panel issues)
-        savefig=joinpath(@__DIR__, "../figures/latent_mBD.pdf")
+        savefig=joinpath(@__DIR__, "../figures/latent_mBD_2.pdf")
         )
 
 # Executing from the REPL
